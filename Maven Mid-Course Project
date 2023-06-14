@@ -1,0 +1,391 @@
+-- MID-COURSE PROJECT
+
+/*
+1. Gsearch seems to be the biggest driver of our business. Could you pull the monthly trends for gsearch sessions and orders so that we can showcase the growth there?
+*/
+
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+	COUNT(DISTINCT website_sessions.website_session_id) AS sessions,
+    COUNT(DISTINCT orders.order_id) AS orders
+FROM website_sessions
+	LEFT JOIN orders
+		ON website_sessions.website_session_id=orders.website_session_id
+WHERE website_sessions.created_at < '2012-11-27'
+	AND website_sessions.utm_source = 'gsearch'
+GROUP BY 
+	YEAR(website_sessions.created_at),
+    MONTH(website_sessions.created_at)
+ORDER BY
+	YEAR(website_sessions.created_at),
+    MONTH(website_sessions.created_at);
+
+-- Same as above, including conversion rate
+
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+	COUNT(DISTINCT website_sessions.website_session_id) AS sessions,
+    COUNT(DISTINCT orders.order_id) AS orders,
+    COUNT(DISTINCT orders.order_id)/COUNT(DISTINCT website_sessions.website_session_id) AS CVR
+FROM website_sessions
+	LEFT JOIN orders
+		ON website_sessions.website_session_id=orders.website_session_id
+WHERE website_sessions.created_at < '2012-11-27'
+	AND website_sessions.utm_source = 'gsearch'
+GROUP BY 
+	YEAR(website_sessions.created_at),
+    MONTH(website_sessions.created_at)
+ORDER BY
+	YEAR(website_sessions.created_at),
+    MONTH(website_sessions.created_at);
+
+/* 
+2. Next, it would be great to see a similar monthly trend for gsearch, but this time splitting out nonbrand and brand campaigns separately. 
+I am wondering if the brand is picking up at all. If so, this is a good story to tell.
+*/
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+	COUNT(DISTINCT CASE WHEN utm_campaign = 'nonbrand' THEN website_sessions.website_session_id ELSE NULL END) AS nonbrand_sessions,
+    COUNT(DISTINCT CASE WHEN utm_campaign = 'nonbrand' THEN orders.order_id ELSE NULL END) AS nonbrand_orders,
+    COUNT(DISTINCT CASE WHEN utm_campaign = 'brand' THEN website_sessions.website_session_id ELSE NULL END) AS brand_sessions,
+    COUNT(DISTINCT CASE WHEN utm_campaign = 'brand' THEN orders.order_id ELSE NULL END) AS brand_orders
+FROM website_sessions
+	LEFT JOIN orders
+		ON website_sessions.website_session_id=orders.website_session_id
+WHERE website_sessions.created_at < '2012-11-27'
+	AND website_sessions.utm_source = 'gsearch'
+GROUP BY 1,2;
+    
+/*
+3. While we're on gsearch, could you dive into the nonbrand, and pull monthly sessions and orders split by device type? 
+I want to flex our analytical muscles a little and show the board we really know our traffic sources
+*/
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+    COUNT(DISTINCT CASE WHEN device_type = 'mobile' THEN website_sessions.website_session_id ELSE NULL END) AS mobile_sessions,
+    COUNT(DISTINCT CASE WHEN device_type = 'mobile' THEN orders.order_id ELSE NULL END) AS mobile_orders,
+    COUNT(DISTINCT CASE WHEN device_type = 'desktop' THEN website_sessions.website_session_id ELSE NULL END) AS desktop_sessions,
+    COUNT(DISTINCT CASE WHEN device_type = 'desktop' THEN orders.order_id ELSE NULL END) AS desktop_orders
+FROM website_sessions
+	LEFT JOIN orders
+		ON website_sessions.website_session_id=orders.website_session_id
+WHERE website_sessions.created_at < '2012-11-27'
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+GROUP BY 1,2;    
+    
+/*
+4. I'm worried that one of our more pessimistic board members may be concerned about the large % of traffic from gsearch. 
+Can you pull monthly trends for gsearch, alongside monthly trends for each of our other channels?
+*/
+
+SELECT DISTINCT utm_source, COUNT(DISTINCT website_session_id)
+FROM website_sessions
+WHERE created_at < '2012-11-27'
+GROUP BY 1;
+
+-- Channels are gsearch, bsearch, and no source/null. http_referer determines if site was foud through search engine or direct type in.
+
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+    COUNT(DISTINCT CASE WHEN utm_source = 'gsearch' THEN website_session_id ELSE NULL END) AS gsearch_paid_traffic,
+    COUNT(DISTINCT CASE WHEN utm_source = 'bsearch' THEN website_session_id ELSE NULL END) AS bsearch_paid_traffic,
+    COUNT(DISTINCT CASE WHEN utm_source IS NULL AND http_referer IS NOT NULL THEN website_session_id ELSE NULL END) AS organic_search_traffic,
+    COUNT(DISTINCT CASE WHEN utm_source IS NULL AND http_referer IS NULL THEN website_session_id ELSE NULL END) AS direct_type_in_traffic
+FROM website_sessions
+WHERE created_at < '2012-11-27'
+GROUP BY 1,2;
+
+/*
+5. I'd like to tell the story of our website performance improvements over the course of the first 8 months. 
+Could you pull the session to order conversion rates, by month?
+*/
+
+SELECT
+	YEAR(website_sessions.created_at) AS year,
+    MONTH(website_sessions.created_at) AS month,
+	COUNT(DISTINCT website_sessions.website_session_id) AS sessions,
+    COUNT(DISTINCT orders.order_id) AS orders,
+    COUNT(DISTINCT orders.order_id)/COUNT(DISTINCT website_sessions.website_session_id) AS CVR
+FROM website_sessions
+	LEFT JOIN orders
+		ON website_sessions.website_session_id=orders.website_session_id
+WHERE website_sessions.created_at < '2012-11-27'
+	AND website_sessions.utm_source = 'gsearch'
+GROUP BY 
+	YEAR(website_sessions.created_at),
+    MONTH(website_sessions.created_at);
+
+/*
+6. For the gsearch lander test, please estimate the revenue that test earned us (Hint: Look at the increase in CVR from the test (Jun 19-Jul 28), 
+and use the nonbrand sessions and revenue since then to calculate incremental value).
+*/
+
+-- Find earliest website_pageview_id that saw /lander-1 (23504)
+
+SELECT 
+	MIN(website_pageview_id) AS first_lander1_pv
+FROM website_pageviews
+WHERE pageview_url = '/lander-1';
+
+-- Identify minimum pageview ids for each session during prescribed timeframe and create temp table
+CREATE TEMPORARY TABLE first_test_pageviews
+SELECT
+	website_pageviews.website_session_id,
+    MIN(website_pageview_id) AS min_pageview_id
+FROM website_pageviews
+	INNER JOIN website_sessions
+		ON website_pageviews.website_session_id=website_sessions.website_session_id -- with inner join can add where conditions to ON instead
+        AND website_pageviews.created_at < '2012-07-28'
+        AND website_pageview_id >= '23504'
+        AND utm_source = 'gsearch'
+		AND utm_campaign = 'nonbrand'
+GROUP BY 1;
+
+-- Create temp table linking website session ids with landing page
+CREATE TEMPORARY TABLE test_session_with_landing_page
+SELECT
+	first_test_pageviews.website_session_id,
+    pageview_url AS landing_page
+FROM first_test_pageviews
+	LEFT JOIN website_pageviews
+		ON first_test_pageviews.min_pageview_id=website_pageviews.website_pageview_id
+WHERE website_pageviews.pageview_url IN ('/home','/lander-1')
+;
+
+-- Create temp table to bring in orders
+CREATE TEMPORARY TABLE test_session_with_orders
+SELECT 
+	test_session_with_landing_page.website_session_id,
+    test_session_with_landing_page.landing_page,
+    orders.order_id AS order_id
+FROM test_session_with_landing_page
+	LEFT JOIN orders
+		ON test_session_with_landing_page.website_session_id=orders.website_session_id
+;
+
+-- Find increase in performance from /home to /lander-1 (.0406-.0318=.0088 increase in conversion rate)
+SELECT
+	landing_page,
+    COUNT(DISTINCT website_session_id) AS sessions,
+    COUNT(DISTINCT order_id) AS orders,
+    COUNT(DISTINCT order_id)/COUNT(DISTINCT website_session_id) AS conversion_rate
+FROM test_session_with_orders
+GROUP BY 1
+;
+
+-- Find most recent session (gsearch/nonbrand) where traffic was sent to /home (17145)
+SELECT
+	MAX(website_sessions.website_session_id) AS most_recent_home_pv
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id=website_pageviews.website_session_id
+WHERE utm_source = 'gsearch'
+	AND utm_campaign = 'nonbrand'
+    AND pageview_url = '/home'
+    AND website_sessions.created_at < '2012-11-27'
+;
+
+-- Find how many sessions we've had since switching 100% to '/lander_1 (22972 sessions)
+SELECT
+	COUNT(DISTINCT website_session_id) AS sessions_since_test
+FROM website_sessions
+WHERE created_at < '2012-11-27'
+	AND website_session_id > 17145
+    AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+;
+
+-- 22972 sessions X .0088 increase in conversion rate = 202 incremental orders since switching to /lander-1 on 2012-07-29
+	-- 2012-07-29 to 2012-11-27 roughly 4 months, so about 50 extra orders per month thanks to /lander-1 increased performance
+
+/*
+7. For the landing page test you analyzed previously, it would be great to show a full conversion funnel from each of the two pages to orders. 
+You can use the same time period you analyzed last time (Jun 19-Jul 28).
+*/
+-- Create columns for each pagefor pageview level (one row for each pageview)
+SELECT
+	website_sessions.website_session_id,
+    pageview_url,
+    CASE WHEN pageview_url = '/home' THEN 1 ELSE 0 END AS home,
+    CASE WHEN pageview_url = '/lander-1' THEN 1 ELSE 0 END AS lander1,
+    CASE WHEN pageview_url = '/products' THEN 1 ELSE 0 END AS products,
+    CASE WHEN pageview_url = '/the-original-mr-fuzzy' THEN 1 ELSE 0 END AS mrfuzzy,
+    CASE WHEN pageview_url = '/cart' THEN 1 ELSE 0 END AS cart,
+    CASE WHEN pageview_url = '/shipping' THEN 1 ELSE 0 END AS shipping,
+    CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id=website_pageviews.website_session_id
+WHERE website_sessions.created_at BETWEEN '2012-06-19' and '2012-07-28'
+	AND pageview_url IN ( '/home','/lander-1','/products','/the-original-mr-fuzzy','/cart','/shipping','/billing')
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand';
+
+-- Use above query as subquery to create session level view (one row for each session)
+CREATE TEMPORARY TABLE session_level_view
+SELECT
+	website_session_id,
+    MAX(home) AS to_home,
+    MAX(lander1) AS to_lander1,
+    MAX(products) AS to_products,
+    MAX(mrfuzzy) AS to_mrfuzzy,
+    MAX(cart) AS to_cart,
+    MAX(shipping) AS to_shipping,
+    MAX(billing) AS to_billing
+FROM
+(
+SELECT
+	website_sessions.website_session_id,
+    pageview_url,
+    CASE WHEN pageview_url = '/home' THEN 1 ELSE 0 END AS home,
+    CASE WHEN pageview_url = '/lander-1' THEN 1 ELSE 0 END AS lander1,
+    CASE WHEN pageview_url = '/products' THEN 1 ELSE 0 END AS products,
+    CASE WHEN pageview_url = '/the-original-mr-fuzzy' THEN 1 ELSE 0 END AS mrfuzzy,
+    CASE WHEN pageview_url = '/cart' THEN 1 ELSE 0 END AS cart,
+    CASE WHEN pageview_url = '/shipping' THEN 1 ELSE 0 END AS shipping,
+    CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id=website_pageviews.website_session_id
+WHERE website_sessions.created_at BETWEEN '2012-06-19' and '2012-07-28'
+	AND pageview_url IN ( '/home','/lander-1','/products','/the-original-mr-fuzzy','/cart','/shipping','/billing')
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+) AS pageview_level
+GROUP BY 1;
+
+SELECT * FROM test_session_with_orders; -- temporary table from question 6. Session level view with landing page and order id.
+SELECT * FROM session_level_view; -- session level view of clicks through each stage of ordering
+
+-- Grouped by landing page, conversion funnel with number of click through to orders. 
+SELECT 
+	landing_page,
+    COUNT(DISTINCT test_session_with_orders.website_session_id) AS total_sessions,
+	COUNT(CASE WHEN to_products = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS lander_click_through,
+    COUNT(CASE WHEN to_mrfuzzy = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS products_click_through,
+    COUNT(CASE WHEN to_cart = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS mrfuzzy_click_through,
+    COUNT(CASE WHEN to_shipping = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS cart_click_through,
+    COUNT(CASE WHEN to_billing = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS shipping_click_through,
+    COUNT(CASE WHEN order_id IS NOT NULL THEN test_session_with_orders.website_session_id ELSE NULL END) AS orders
+    FROM session_level_view
+	LEFT JOIN test_session_with_orders
+		ON session_level_view.website_session_id=test_session_with_orders.website_session_id
+GROUP BY 1
+;
+
+-- Grouped by landing page, conversion funnel with converstion rate %
+SELECT 
+	landing_page,
+    COUNT(DISTINCT test_session_with_orders.website_session_id) AS total_sessions,
+    COUNT(CASE WHEN to_products = 1 THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(DISTINCT test_session_with_orders.website_session_id) AS lander_cvr,
+    COUNT(CASE WHEN to_mrfuzzy = 1 THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(CASE WHEN to_products = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS products_cvr,
+    COUNT(CASE WHEN to_cart = 1 THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(CASE WHEN to_mrfuzzy = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS mrfuzzy_cvr,
+    COUNT(CASE WHEN to_shipping = 1 THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(CASE WHEN to_cart = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS cart_cvr,
+	COUNT(CASE WHEN to_billing = 1 THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(CASE WHEN to_shipping = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS shipping_cvr,
+    COUNT(CASE WHEN order_id IS NOT NULL THEN test_session_with_orders.website_session_id ELSE NULL END)/COUNT(CASE WHEN to_billing = 1 THEN test_session_with_orders.website_session_id ELSE NULL END) AS billing_cvr
+    FROM session_level_view
+	LEFT JOIN test_session_with_orders
+		ON session_level_view.website_session_id=test_session_with_orders.website_session_id
+GROUP BY 1
+;
+        
+/*
+8. I'd love for you to quantify the impact of our billing test, as well. Please analyze the lift generated from the test (Sep 10-Nov 10), 
+in terms of revenue per billing page session, and then pull the number of billing page sessions for the past month to understand monthly impact.
+*/
+
+-- Determine url for different billing pages ('/billing & /billing-2)
+SELECT 
+	DISTINCT pageview_url
+FROM website_pageviews
+WHERE pageview_url LIKE '%billing%';
+
+-- Determine first use of /billing-2 (session id 25325, created on 2012-09-10 at 00:13:05)
+SELECT
+	created_at,
+	MIN(website_session_id)
+FROM website_pageviews
+WHERE pageview_url = '/billing-2'
+GROUP BY 1;
+
+-- Pull info on which billing page each session saw, if any
+SELECT 
+	website_sessions.website_session_id,
+    CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing,
+    CASE WHEN pageview_url = '/billing-2' THEN 1 ELSE 0 END AS billing_2
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id=website_pageviews.website_session_id
+WHERE website_sessions.created_at BETWEEN '2012-09-10' and '2012-11-10'
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+;
+
+-- Use above query as subquery to create temp table with session level view
+CREATE TEMPORARY TABLE billing_session_level
+SELECT
+	website_session_id,
+    MAX(billing) AS saw_billing,
+    MAX(billing_2) AS saw_billing_2
+FROM
+(
+SELECT 
+	website_sessions.website_session_id,
+    CASE WHEN pageview_url = '/billing' THEN 1 ELSE 0 END AS billing,
+    CASE WHEN pageview_url = '/billing-2' THEN 1 ELSE 0 END AS billing_2
+FROM website_sessions
+	LEFT JOIN website_pageviews
+		ON website_sessions.website_session_id=website_pageviews.website_session_id
+WHERE website_sessions.created_at BETWEEN '2012-09-10' and '2012-11-10'
+	AND utm_source = 'gsearch'
+    AND utm_campaign = 'nonbrand'
+    ) AS billing_page
+GROUP BY 1
+;
+
+-- Bring in orders to session level
+-- CREATE TEMPORARY TABLE billing_sessions_w_orders
+SELECT
+	billing_session_level.website_session_id,
+    saw_billing,
+    saw_billing_2,
+    order_id,
+    price_usd
+FROM billing_session_level
+	LEFT JOIN orders
+		ON orders.website_session_id=billing_session_level.website_session_id
+;
+
+-- Group by pageview URL to get pageview level
+SELECT
+	pageview_url AS billing_page,
+    COUNT(DISTINCT billing_sessions_w_orders.website_session_id) AS num_sessions,
+    COUNT(DISTINCT order_id) AS num_orders,
+    SUM(price_usd) AS total_revenue,
+    SUM(price_usd)/COUNT(DISTINCT billing_sessions_w_orders.website_session_id) AS revenue_per_session
+FROM billing_sessions_w_orders
+	LEFT JOIN website_pageviews
+		ON website_pageviews.website_session_id=billing_sessions_w_orders.website_session_id
+WHERE pageview_url IN ('/billing', '/billing-2')
+GROUP BY 1
+;
+
+-- Total revenue went from $8798.24 to $12097.58 by chaning billing page. That's an increase of $3299.34 in total revenue.
+-- Sales per session went from $21.94 to $30.55. That's an increase of $8.61 per session.
+-- Determine how many sessions saw the /billing-2 page in the last month, and multiply it by $8.61 (increase in revenue/session)
+
+SELECT
+	COUNT(DISTINCT website_session_id) AS num_sessions
+FROM
+	website_pageviews
+			WHERE created_at BETWEEN '2012-10-27' and '2012-11-27'
+	AND pageview_url = '/billing-2'
+;
+
+-- /billing-2 was seen 583 times in the last month. 583 x $8.61 = a revenue increase of $5019.63 total
